@@ -1,10 +1,11 @@
-module Jot
+module jot
 
 go 1.21.5
 
 require (
-	github.com/hupe1980/go-huggingface v0.0.13
+	github.com/google/uuid v1.4.0 // indirect
 	github.com/tmc/langchaingo v0.1.1
+	golang.org/x/crypto v0.17.0 // indirect
 )
 
 require (
@@ -12,7 +13,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.2.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.3 // indirect
 	github.com/dlclark/regexp2 v1.8.1 // indirect
-	github.com/google/uuid v1.3.0 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/huandu/xstrings v1.3.3 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
 	github.com/mitchellh/copystructure v1.0.0 // indirect
@@ -20,6 +21,5 @@ require (
 	github.com/pkoukk/tiktoken-go v0.1.2 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/spf13/cast v1.3.1 // indirect
-	golang.org/x/crypto v0.17.0 // indirect
 	golang.org/x/exp v0.0.0-20230510235704-dd950f8aeaea // indirect
 )
