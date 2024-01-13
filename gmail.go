@@ -70,6 +70,146 @@ func saveToken(path string, token *oauth2.Token) {
 	json.NewEncoder(f).Encode(token)
 }
 
+// Function to retrieve the list of labels.
+func getLabels(client *gmail.Service, user string) {
+	r, err := client.Users.Labels.List(user).Do()
+	if err != nil {
+		log.Fatalf("Unable to retrieve labels: %v", err)
+	}
+	if len(r.Labels) == 0 {
+		fmt.Println("No labels found.")
+		return
+	}
+	fmt.Println("Labels:")
+	for _, l := range r.Labels {
+		fmt.Printf("- %s\n", l.Name)
+	}
+}
+
+// Get the content of the given message
+func getMessageContent(msg *gmail.Message) (string, error) {
+	var html string
+	for _, part := range msg.Payload.Parts {
+		if part.MimeType == "text/html" {
+			data, err := base64.URLEncoding.DecodeString(part.Body.Data)
+			if err != nil {
+				return html, err
+			}
+			html += string(data)
+		}
+	}
+	return html, nil
+}
+
+// FetchLatestMessage retrieves the latest message in the inbox of the given user.
+// If no messages are found, an error is returned.
+func FetchLatestMessage(client *gmail.Service, user string) (*gmail.Message, error) {
+	// Retrieve the list of messages in the inbox.
+	l, err := client.Users.Messages.List(user).Do()
+	if err != nil {
+		return nil, fmt.Errorf("unable to retrieve messages: %v", err)
+	}
+
+	// Check if any messages were found.
+	if len(l.Messages) == 0 {
+		return nil, fmt.Errorf("no messages found")
+	}
+
+	// Retrieve the latest message.
+	latestMessageID := l.Messages[0].Id
+	msg, err := client.Users.Messages.Get(user, latestMessageID).Format("full").Do()
+	if err != nil {
+		return nil, fmt.Errorf("unable to retrieve message: %v", err)
+	}
+
+	return msg, nil
+}
+
+// GetStartHistoryId retrieves the startHistoryId from the config file or fetches the latest message for starthistoryId.
+func GetStartHistoryId(client *gmail.Service, user string) (uint64, error) {
+	configFileName := "config.json"
+
+	// Check if config file exists
+	if _, err := os.Stat(configFileName); os.IsNotExist(err) {
+		// Config file not present, fetch the latest message
+		message, err := FetchLatestMessage(client, user)
+		if err != nil {
+			return 0, fmt.Errorf("error fetching latest message: %v", err)
+		}
+
+		// StartHistoryId is set to the historyId of latest message
+		startHistoryId := message.HistoryId
+
+		// Save startHistoryId to config file
+		err = saveStartHistoryIdToConfig(startHistoryId, configFileName)
+		if err != nil {
+			return 0, fmt.Errorf("error saving startHistoryId to config: %v", err)
+		}
+		return startHistoryId, nil
+	}
+
+	// Config file exists, read startHistoryId from the file
+	startHistoryId, err := readStartHistoryIdFromConfig(configFileName)
+	if err != nil {
+		return 0, fmt.Errorf("error reading startHistoryId from config: %v", err)
+	}
+
+	return startHistoryId, nil
+}
+
+// Save startHistoryId to config file.
+func saveStartHistoryIdToConfig(startHistoryId uint64, fileName string) error {
+	config := map[string]uint64{"startHistoryId": startHistoryId}
+	data, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(fileName, data, 0644)
+}
+
+// Read startHistoryId from config file.
+func readStartHistoryIdFromConfig(fileName string) (uint64, error) {
+	data, err := os.ReadFile(fileName)
+	if err != nil {
+		return 0, err
+	}
+
+	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		return 0, err
+	}
+
+	startHistoryId := uint64(config["startHistoryId"].(float64))
+	return startHistoryId, nil
+}
+
+// GetMessagesAddedinHistory retrieves the list of messages added in the history after the given history id.
+// The function returns a slice of message IDs and the latest history id.
+func GetMessagesAddedinHistory(history_id uint64, client *gmail.Service, user string) ([]string, uint64, error) {
+	// Retrieve the history of the user.
+	history, err := client.Users.History.List(user).StartHistoryId(history_id).Do()
+	if err != nil {
+		return nil, 0, fmt.Errorf("unable to retrieve history: %v", err)
+	}
+
+	// Initialize a slice to store the new message IDs.
+	new_messages := []string{}
+
+	// Update the latest history ID.
+	latest_history_id := history.HistoryId
+
+	// Iterate through the history and extract the message IDs.
+	for _, hist := range history.History {
+		message_added := hist.MessagesAdded
+		for _, msg := range message_added {
+			new_messages = append(new_messages, msg.Message.Id)
+		}
+	}
+
+	return new_messages, latest_history_id, nil
+}
+
 func main() {
 	ctx := context.Background()
 	b, err := os.ReadFile("credentials.json")
@@ -90,41 +230,20 @@ func main() {
 	}
 
 	user := "me"
-	r, err := srv.Users.Labels.List(user).Do()
+
+	start_history_id, err := GetStartHistoryId(srv, user)
 	if err != nil {
-		log.Fatalf("Unable to retrieve labels: %v", err)
-	}
-	if len(r.Labels) == 0 {
-		fmt.Println("No labels found.")
-		return
-	}
-	fmt.Println("Labels:")
-	for _, l := range r.Labels {
-		fmt.Printf("- %s\n", l.Name)
+		log.Fatalf("Unable to retrieve startHistoryId: %v", err)
 	}
 
-	// l, err := srv.Users.Messages.List(user).Do()
-	// if err != nil {
-	// 	log.Fatalf("Unable to retrieve messages: %v", err)
-	// }
+	fmt.Println("Fetching history for ", start_history_id)
 
-	// fmt.Println("Messages : ")
-	// for _, i := range l.Messages {
-	// 	fmt.Printf("- %s\n", i.Id)
-	// }
+	new_messages, latest_history_id, err := GetMessagesAddedinHistory(start_history_id, srv, user)
 
-	msg, err := srv.Users.Messages.Get(user, "18c9303a3b9cd29d").Format("full").Do()
+	fmt.Printf("\n\nYou have %d new Messages", len(new_messages))
+
+	err = saveStartHistoryIdToConfig(latest_history_id, "config.json")
 	if err != nil {
-		log.Fatalf("Unable to retrieve message: %v", err)
-	}
-
-	fmt.Println("Message : ")
-
-	for _, part := range msg.Payload.Parts {
-		if part.MimeType == "text/html" {
-			data, _ := base64.URLEncoding.DecodeString(part.Body.Data)
-			html := string(data)
-			fmt.Println(html)
-		}
+		log.Fatalf("Unable to save startHistoryId to config: %v", err)
 	}
 }
