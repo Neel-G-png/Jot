@@ -11,6 +11,12 @@ import (
 	"github.com/tmc/langchaingo/prompts"
 )
 
+type Configuration struct {
+	HuggingFace_AccessToken string
+	Google_AccessToken      string
+	Gmail_AccessToken       string
+}
+
 func generatePrompt(email string) string {
 	prompt := prompts.NewPromptTemplate(
 		`Extract Action items from the following Paragraph into a list : 
@@ -37,6 +43,7 @@ func cleanResult(result string) []string {
 
 func extractActionItems(prompt string) []string {
 	clientOptions := []huggingface.Option{
+		huggingface.WithToken("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"),
 		huggingface.WithModel("mistralai/Mistral-7B-v0.1"),
 	}
 	llm, err := huggingface.New(clientOptions...)
