@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -26,7 +29,32 @@ func getClient(config *oauth2.Config) *http.Client {
 		tok = getTokenFromWeb(config)
 		saveToken(tokFile, tok)
 	}
-	return config.Client(context.Background(), tok)
+
+	token, err := checkAndRefreshToken(tok, config, tokFile)
+	if err != nil {
+		panic(err)
+	}
+
+	return config.Client(context.Background(), token)
+}
+
+func getCodeParamFromURL(inputURL string) (string, error) {
+	// Parse the URL
+	parsedURL, err := url.Parse(inputURL)
+	if err != nil {
+		return "", err
+	}
+
+	// Get the query parameters from the URL
+	queryParams := parsedURL.Query()
+
+	// Check if the "code" parameter is present
+	codeParam := queryParams.Get("code")
+	if codeParam == "" {
+		return "", errors.New("code parameter not found in the URL")
+	}
+
+	return codeParam, nil
 }
 
 // Request a token from the web, then returns the retrieved token.
@@ -40,7 +68,12 @@ func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
 		log.Fatalf("Unable to read authorization code: %v", err)
 	}
 
-	tok, err := config.Exchange(context.TODO(), authCode)
+	code, err := getCodeParamFromURL(authCode)
+	if err != nil {
+		log.Fatalf("Unable to extract authorization code: %v", err)
+	}
+
+	tok, err := config.Exchange(context.TODO(), code)
 	if err != nil {
 		log.Fatalf("Unable to retrieve token from web: %v", err)
 	}
@@ -57,6 +90,26 @@ func tokenFromFile(file string) (*oauth2.Token, error) {
 	tok := &oauth2.Token{}
 	err = json.NewDecoder(f).Decode(tok)
 	return tok, err
+}
+
+// Refreshes access token if neccessary and updates in token.json
+func checkAndRefreshToken(token *oauth2.Token, config *oauth2.Config, tokfile string) (*oauth2.Token, error) {
+	if token.Expiry.Before(time.Now()) {
+		// Token is expired, refresh it
+		ctx := context.Background()          // reuse your context
+		if token.Expiry.Before(time.Now()) { // expired so let's update it
+			src := config.TokenSource(ctx, token)
+			newToken, err := src.Token() // this actually goes and renews the tokens
+			if err != nil {
+				return nil, err
+			}
+			if newToken.AccessToken != token.AccessToken {
+				saveToken(tokfile, newToken) // back to the database with new access and refresh token
+				token = newToken
+			}
+		}
+	}
+	return token, nil
 }
 
 // Saves a token to a file path.
