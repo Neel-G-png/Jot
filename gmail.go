@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
+	"golang.org/x/net/html"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
@@ -263,6 +265,35 @@ func GetMessagesAddedinHistory(history_id uint64, client *gmail.Service, user st
 	return new_messages, latest_history_id, nil
 }
 
+func getAllTextFromHTML(htmlContent string) ([]string, error) {
+	var textPortions []string
+
+	// Parse HTML content
+	doc, err := html.Parse(strings.NewReader(htmlContent))
+	if err != nil {
+		return nil, err
+	}
+
+	// Traverse the HTML tree to extract text
+	var traverse func(node *html.Node)
+	traverse = func(node *html.Node) {
+		if node.Type == html.TextNode {
+			// Append text content to the result slice
+			textPortions = append(textPortions, strings.TrimSpace(node.Data))
+		}
+
+		// Recursive traversal of child nodes
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			traverse(child)
+		}
+	}
+
+	// Start traversal from the root of the HTML tree
+	traverse(doc)
+
+	return textPortions, nil
+}
+
 func main() {
 	ctx := context.Background()
 	b, err := os.ReadFile("credentials.json")
@@ -299,4 +330,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("Unable to save startHistoryId to config: %v", err)
 	}
+
+	// TODO create function to handle multiple messages
+	// ? Data Structure to use to store messages and metadata?
+	// * sample code below
+
+	/*
+		msg, err := srv.Users.Messages.Get(user, new_messages[0]).Do()
+		if err != nil {
+			log.Fatalf("Unable to retrieve message: %v", err)
+		}
+
+		html, err := getMessageContent(msg)
+		content, err := getAllTextFromHTML(html)
+
+		fmt.Println("\n\nMessage html : \n\n", html)
+		fmt.Println("\n\nMessage Text : \n\n")
+		for _, str := range content {
+			fmt.Println(str)
+		}
+	*/
 }
