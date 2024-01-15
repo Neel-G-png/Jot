@@ -20,6 +20,13 @@ import (
 	"google.golang.org/api/option"
 )
 
+type Email struct {
+	from    string
+	to      string
+	subject string
+	body    []string
+}
+
 // Retrieve a token, saves the token, then returns the generated client.
 func getClient(config *oauth2.Config) *http.Client {
 	// The file token.json stores the user's access and refresh tokens, and is
@@ -142,18 +149,28 @@ func getLabels(client *gmail.Service, user string) {
 }
 
 // Get the content of the given message
-func getMessageContent(msg *gmail.Message) (string, error) {
+func getMessageContent(msg *gmail.Message) (string, error, map[string]string) {
 	var html string
 	for _, part := range msg.Payload.Parts {
 		if part.MimeType == "text/html" {
 			data, err := base64.URLEncoding.DecodeString(part.Body.Data)
 			if err != nil {
-				return html, err
+				return html, err, nil
 			}
 			html += string(data)
 		}
 	}
-	return html, nil
+
+	headers := make(map[string]string)
+	for _, header := range msg.Payload.Headers {
+		switch header.Name {
+		case "From",
+			"To",
+			"Subject":
+			headers[header.Name] = header.Value
+		}
+	}
+	return html, nil, headers
 }
 
 // FetchLatestMessage retrieves the latest message in the inbox of the given user.
@@ -294,6 +311,28 @@ func getAllTextFromHTML(htmlContent string) ([]string, error) {
 	return textPortions, nil
 }
 
+func parseEmails(messages []string, client *gmail.Service, user string) ([]Email, error) {
+	var newEmails []Email
+
+	for _, message := range messages {
+		// Get the message content
+		// fmt.Println("Getting message : ", message)
+		msg, err := client.Users.Messages.Get(user, message).Do()
+		if err != nil {
+			// fmt.Printf("Unable to retrieve %v: %v", message, err)
+			continue
+		}
+
+		// Get all the text from the HTML content
+		html, err, headers := getMessageContent(msg)
+		content, err := getAllTextFromHTML(html)
+
+		newEmails = append(newEmails, Email{headers["From"], headers["To"], headers["Subject"], content})
+	}
+
+	return newEmails, nil
+}
+
 func main() {
 	ctx := context.Background()
 	b, err := os.ReadFile("credentials.json")
@@ -320,34 +359,24 @@ func main() {
 		log.Fatalf("Unable to retrieve startHistoryId: %v", err)
 	}
 
-	fmt.Println("Fetching history for ", start_history_id)
+	// fmt.Println("Fetching history for ", start_history_id)
 
 	new_messages, latest_history_id, err := GetMessagesAddedinHistory(start_history_id, srv, user)
-
-	fmt.Printf("\n\nYou have %d new Messages", len(new_messages))
 
 	err = saveStartHistoryIdToConfig(latest_history_id, "config.json")
 	if err != nil {
 		log.Fatalf("Unable to save startHistoryId to config: %v", err)
 	}
 
-	// TODO create function to handle multiple messages
-	// ? Data Structure to use to store messages and metadata?
-	// * sample code below
+	emails, err := parseEmails(new_messages, srv, user)
 
-	/*
-		msg, err := srv.Users.Messages.Get(user, new_messages[0]).Do()
-		if err != nil {
-			log.Fatalf("Unable to retrieve message: %v", err)
+	fmt.Printf("You have %d new Messages", len(emails))
+
+	for _, email := range emails {
+		fmt.Printf("\n\nFrom: %s\nTo: %s\nSubject: %s\n\n", email.from, email.to, email.subject)
+		for _, content := range email.body {
+			fmt.Printf("%s\n", content)
 		}
-
-		html, err := getMessageContent(msg)
-		content, err := getAllTextFromHTML(html)
-
-		fmt.Println("\n\nMessage html : \n\n", html)
-		fmt.Println("\n\nMessage Text : \n\n")
-		for _, str := range content {
-			fmt.Println(str)
-		}
-	*/
+	}
+	// return emails
 }
