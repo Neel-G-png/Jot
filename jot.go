@@ -19,10 +19,11 @@ type Configuration struct {
 
 func generatePrompt(email string) string {
 	prompt := prompts.NewPromptTemplate(
-		`Extract Action items from the following Paragraph into a list : 
+		`Extract Action items from the following Paragraph into a list: 
 		***********************************************************
 		Paragraph : {{.Email}}?
-		***********************************************************`,
+		***********************************************************
+		Action Items:`,
 		[]string{"Email"},
 	)
 	result, err := prompt.Format(map[string]any{
@@ -36,25 +37,31 @@ func generatePrompt(email string) string {
 }
 
 func cleanResult(result string) []string {
-	actionItemsString := strings.SplitAfter(result, "Action items :")
+	actionItemsString := strings.SplitAfter(result, "Action Items:")
 	actionItems := strings.SplitAfter(actionItemsString[1], "\n")
-	return actionItems
+	finalResult := actionItems[1 : len(actionItems)-1]
+	for i := 0; i < len(finalResult); i++ {
+		finalResult[i] = strings.TrimSpace(finalResult[i])[2:]
+	}
+	return finalResult
 }
 
-func extractActionItems(prompt string) []string {
+func getNewClient() *huggingface.LLM {
 	clientOptions := []huggingface.Option{
 		huggingface.WithToken("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"),
 		huggingface.WithModel("mistralai/Mistral-7B-v0.1"),
 	}
 	llm, err := huggingface.New(clientOptions...)
-
 	if err != nil {
 		fmt.Println("new error")
 		log.Fatal(err)
 	}
+	return llm
+}
 
+func extractActionItems(prompt string) []string {
+	llm := getNewClient()
 	ctx := context.Background()
-
 	generateOptions := []llms.CallOption{
 		llms.WithModel("mistralai/Mistral-7B-v0.1"),
 		llms.WithMinLength(50),
@@ -66,13 +73,9 @@ func extractActionItems(prompt string) []string {
 		fmt.Println("call error")
 		log.Fatal(err)
 	}
-	cleanedResult := cleanResult(completion)
-	finalResult := cleanedResult[1:]
-	for i := range finalResult {
-		finalResult[i] = strings.TrimSpace(finalResult[i])[2:]
-	}
+	finalResult := cleanResult(completion)
 
-	return finalResult
+	return finalResult //[]string{completion}
 }
 
 func main() {

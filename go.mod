@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	golang.org/x/net v0.20.0
 	golang.org/x/oauth2 v0.10.0
 	google.golang.org/api v0.126.0
 )
@@ -35,7 +36,6 @@ require (
 	github.com/spf13/cast v1.3.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/exp v0.0.0-20230510235704-dd950f8aeaea // indirect
-	golang.org/x/net v0.20.0 // indirect
 	golang.org/x/sys v0.16.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
