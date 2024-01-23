@@ -15,7 +15,7 @@ const (
 	baseAPIURL    = "https://api.notion.com/v1"
 )
 
-func createPage(parentID, pageTitle, token string) (string, error) {
+func createPage(parentID, pageTitle, content, token string) (string, error) {
 	data := map[string]interface{}{
 		"parent": map[string]interface{}{
 			"database_id": parentID,
@@ -30,9 +30,20 @@ func createPage(parentID, pageTitle, token string) (string, error) {
 					},
 				},
 			},
-			"Status": map[string]interface{}{
-				"select": map[string]interface{}{
-					"name": "To-Do", // The name of the status option as it appears in Notion
+		},
+		"children": []map[string]interface{}{
+			{
+				"object": "block",
+				"type":   "paragraph",
+				"paragraph": map[string]interface{}{
+					"rich_text": []map[string]interface{}{
+						{
+							"type": "text",
+							"text": map[string]interface{}{
+								"content": content,
+							},
+						},
+					},
 				},
 			},
 		},
@@ -129,21 +140,14 @@ func UpdatePageTitle(pageID, newTitle, token string) error {
 func updateNotion(emails [][]string) {
 	token := "secret_Jgnpej2cxzLpnP1tVJBOVkMO8kidJVaYVH0H16uHoBV"
 	parentID := "783e85fec3544e6684487ce244769b83" // Replace with your Notion database ID
+	newTitle := "Action Items from Email"
+	emailContent := "1. [Marketing Team] Finalize new campaign strategy by next Friday.\n2. [Tech Team] Complete software update testing by Wednesday.\n3. Schedule a client meeting to discuss project progress.\n4. Review and update project documentation by the end of this week."
 
-	// Create a new page
-	newPageID, err := createPage(parentID, "New Page Title", token)
+	// Create a new page with title and content
+	newPageID, err := createPage(parentID, newTitle, emailContent, token)
 	if err != nil {
 		fmt.Println("Error creating page:", err)
 		return
 	}
 	fmt.Println("New page created successfully with ID:", newPageID)
-
-	// Update the newly created page
-	newTitle := "second page"
-	err = UpdatePageTitle(newPageID, newTitle, token)
-	if err != nil {
-		fmt.Println("Error updating page title:", err)
-	} else {
-		fmt.Println("Page title updated successfully")
-	}
 }
