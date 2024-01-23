@@ -48,7 +48,7 @@ func cleanResult(result string) []string {
 
 func getNewClient() *huggingface.LLM {
 	clientOptions := []huggingface.Option{
-		huggingface.WithToken("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"),
+		huggingface.WithToken("XXXXXXXXXXXXX"),
 		huggingface.WithModel("mistralai/Mistral-7B-v0.1"),
 	}
 	llm, err := huggingface.New(clientOptions...)
@@ -73,17 +73,28 @@ func extractActionItems(prompt string) []string {
 		fmt.Println("call error")
 		log.Fatal(err)
 	}
+	// fmt.Println(completion, "\n\n########################")
 	finalResult := cleanResult(completion)
 
 	return finalResult //[]string{completion}
 }
 
 func main() {
-	email := "I trust this message finds you well. As we navigate the demands of our current projects. First and foremost, we have a client presentation scheduled for 2:00 PM, and I need you to finalize the presentation deck by incorporating all relevant data, charts, and key insights. Additionally, we need your expertise in reviewing the budget proposal for Project X, providing detailed feedback, and coordinating with the finance team on any necessary adjustments. Lastly, please compile individual progress reports from team members for our weekly meeting tomorrow, summarizing key achievements, challenges, and upcoming goals. Kindly submit the compiled report to me by 5:00 PM today for review. Your dedication to completing these tasks promptly is instrumental to our success. Feel free to reach out if you have any questions or foresee any challenges."
-	result := generatePrompt(email)
-	finalResult := extractActionItems(result)
-	for i := 0; i < len(finalResult); i++ {
-		fmt.Println(finalResult[i])
+	// email := "I trust this message finds you well. As we navigate the demands of our current projects. First and foremost, we have a client presentation scheduled for 2:00 PM, and I need you to finalize the presentation deck by incorporating all relevant data, charts, and key insights. Additionally, we need your expertise in reviewing the budget proposal for Project X, providing detailed feedback, and coordinating with the finance team on any necessary adjustments. Lastly, please compile individual progress reports from team members for our weekly meeting tomorrow, summarizing key achievements, challenges, and upcoming goals. Kindly submit the compiled report to me by 5:00 PM today for review. Your dedication to completing these tasks promptly is instrumental to our success. Feel free to reach out if you have any questions or foresee any challenges."
+	emails := getEmails()
+	// Make each email into a string.
+	var actionItems [][]string
+	for _, email := range emails {
+		emailString := "From: " + email.from + "\nTo: " + email.to + "\nSubject: " + email.subject
+
+		for _, content := range email.body {
+			emailString += "\n" + content
+		}
+		result := generatePrompt(emailString)
+		finalResult := extractActionItems(result)
+		actionItems = append(actionItems, finalResult)
 	}
+	fmt.Println(actionItems)
+	updateNotion(actionItems)
 	// fmt.Println("This is the final result : ", finalResult)
 }

@@ -126,7 +126,7 @@ func UpdatePageTitle(pageID, newTitle, token string) error {
 	return nil
 }
 
-func main() {
+func updateNotion(emails [][]string) {
 	token := "secret_Jgnpej2cxzLpnP1tVJBOVkMO8kidJVaYVH0H16uHoBV"
 	parentID := "783e85fec3544e6684487ce244769b83" // Replace with your Notion database ID
 

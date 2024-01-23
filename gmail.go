@@ -333,7 +333,7 @@ func parseEmails(messages []string, client *gmail.Service, user string) ([]Email
 	return newEmails, nil
 }
 
-func main() {
+func getEmails() []Email {
 	ctx := context.Background()
 	b, err := os.ReadFile("credentials.json")
 	if err != nil {
@@ -372,11 +372,11 @@ func main() {
 
 	fmt.Printf("You have %d new Messages", len(emails))
 
-	for _, email := range emails {
-		fmt.Printf("\n\nFrom: %s\nTo: %s\nSubject: %s\n\n", email.from, email.to, email.subject)
-		for _, content := range email.body {
-			fmt.Printf("%s\n", content)
-		}
-	}
-	// return emails
+	// for _, email := range emails {
+	// 	fmt.Printf("\n\nFrom: %s\nTo: %s\nSubject: %s\n\n", email.from, email.to, email.subject)
+	// 	for _, content := range email.body {
+	// 		fmt.Printf("%s\n", content)
+	// 	}
+	// }
+	return emails
 }
