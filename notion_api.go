@@ -30,6 +30,11 @@ func createPage(parentID, pageTitle, content, token string) (string, error) {
 					},
 				},
 			},
+			"Status": map[string]interface{}{
+				"select": map[string]interface{}{
+					"name": "To-Do", // Ensure this matches the option in your Notion database
+				},
+			},
 		},
 		"children": []map[string]interface{}{
 			{
