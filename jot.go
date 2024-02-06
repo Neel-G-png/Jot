@@ -95,6 +95,6 @@ func main() {
 		actionItems = append(actionItems, finalResult)
 	}
 	fmt.Println(actionItems)
-	updateNotion(actionItems)
+	// updateNotion(actionItems)
 	// fmt.Println("This is the final result : ", finalResult)
 }

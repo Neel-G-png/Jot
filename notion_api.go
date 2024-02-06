@@ -143,10 +143,8 @@ func UpdatePageTitle(pageID, newTitle, token string) error {
 }
 
 func updateNotion(emails [][]string) {
-	token := "secret_Jgnpej2cxzLpnP1tVJBOVkMO8kidJVaYVH0H16uHoBV"
-	parentID := "783e85fec3544e6684487ce244769b83" // Replace with your Notion database ID
-	newTitle := "Action Items from Email"
-	emailContent := "1. [Marketing Team] Finalize new campaign strategy by next Friday.\n2. [Tech Team] Complete software update testing by Wednesday.\n3. Schedule a client meeting to discuss project progress.\n4. Review and update project documentation by the end of this week."
+	token := "x"
+	parentID := "x" // Replace with your Notion database ID
 
 	// Create a new page with title and content
 	newPageID, err := createPage(parentID, newTitle, emailContent, token)
