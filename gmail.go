@@ -110,7 +110,10 @@ func checkAndRefreshToken(token *oauth2.Token, config *oauth2.Config, tokfile st
 			src := config.TokenSource(ctx, token)
 			newToken, err := src.Token() // this actually goes and renews the tokens
 			if err != nil {
-				return nil, err
+				// fmt.Println("Inside error")
+				tok := getTokenFromWeb(config)
+				saveToken(tokfile, tok)
+				return tok, nil
 			}
 			if newToken.AccessToken != token.AccessToken {
 				saveToken(tokfile, newToken) // back to the database with new access and refresh token
