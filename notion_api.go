@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"sync"
 )
 
 // Notion API URL constants
@@ -142,15 +143,21 @@ func UpdatePageTitle(pageID, newTitle, token string) error {
 	return nil
 }
 
-func updateNotion(emails [][]string) {
+func updateNotion(llmChnl <-chan Email, wg *sync.WaitGroup) {
+	defer wg.Done()
 	token := "x"
 	parentID := "x" // Replace with your Notion database ID
 
 	// Create a new page with title and content
-	newPageID, err := createPage(parentID, newTitle, emailContent, token)
-	if err != nil {
-		fmt.Println("Error creating page:", err)
-		return
+	for email := range llmChnl {
+		// newTitle := email.subject
+		// emailContent := email.summary
+		// newPageID, err := createPage(parentID, newTitle, strings.Join(emailContent, "\n"), token)
+		// if err != nil {
+		// 	fmt.Println("Error creating page:", err)
+		// 	return
+		// }
+		// fmt.Println("New page created successfully with ID:", newPageID)
+		fmt.Println("Updating notion for Email: ", email.subject, token, parentID)
 	}
-	fmt.Println("New page created successfully with ID:", newPageID)
 }

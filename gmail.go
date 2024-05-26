@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/html"
@@ -25,6 +26,7 @@ type Email struct {
 	to      string
 	subject string
 	body    []string
+	summary []string
 }
 
 // Retrieve a token, saves the token, then returns the generated client.
@@ -200,6 +202,23 @@ func FetchLatestMessage(client *gmail.Service, user string) (*gmail.Message, err
 	return msg, nil
 }
 
+func configNotPresent(configFileName string, client *gmail.Service, user string) (uint64, error) {
+	message, err := FetchLatestMessage(client, user)
+	if err != nil {
+		return 0, fmt.Errorf("error fetching latest message: %v", err)
+	}
+
+	// StartHistoryId is set to the historyId of latest message
+	startHistoryId := message.HistoryId
+
+	// Save startHistoryId to config file
+	err = saveStartHistoryIdToConfig(startHistoryId, configFileName)
+	if err != nil {
+		return 0, fmt.Errorf("error saving startHistoryId to config: %v", err)
+	}
+	return startHistoryId, nil
+}
+
 // GetStartHistoryId retrieves the startHistoryId from the config file or fetches the latest message for starthistoryId.
 func GetStartHistoryId(client *gmail.Service, user string) (uint64, error) {
 	configFileName := "config.json"
@@ -207,24 +226,12 @@ func GetStartHistoryId(client *gmail.Service, user string) (uint64, error) {
 	// Check if config file exists
 	if _, err := os.Stat(configFileName); os.IsNotExist(err) {
 		// Config file not present, fetch the latest message
-		message, err := FetchLatestMessage(client, user)
-		if err != nil {
-			return 0, fmt.Errorf("error fetching latest message: %v", err)
-		}
-
-		// StartHistoryId is set to the historyId of latest message
-		startHistoryId := message.HistoryId
-
-		// Save startHistoryId to config file
-		err = saveStartHistoryIdToConfig(startHistoryId, configFileName)
-		if err != nil {
-			return 0, fmt.Errorf("error saving startHistoryId to config: %v", err)
-		}
-		return startHistoryId, nil
+		startHistoryId, err := configNotPresent(configFileName, client, user)
+		return startHistoryId, err
 	}
 
 	// Config file exists, read startHistoryId from the file
-	startHistoryId, err := readStartHistoryIdFromConfig(configFileName)
+	startHistoryId, err := readStartHistoryIdFromConfig(configFileName, client, user)
 	if err != nil {
 		return 0, fmt.Errorf("error reading startHistoryId from config: %v", err)
 	}
@@ -244,7 +251,7 @@ func saveStartHistoryIdToConfig(startHistoryId uint64, fileName string) error {
 }
 
 // Read startHistoryId from config file.
-func readStartHistoryIdFromConfig(fileName string) (uint64, error) {
+func readStartHistoryIdFromConfig(fileName string, client *gmail.Service, user string) (uint64, error) {
 	data, err := os.ReadFile(fileName)
 	if err != nil {
 		return 0, err
@@ -256,6 +263,11 @@ func readStartHistoryIdFromConfig(fileName string) (uint64, error) {
 	}
 
 	startHistoryId := uint64(config["startHistoryId"].(float64))
+
+	if startHistoryId == 0 {
+		startHistoryId, err = configNotPresent(fileName, client, user)
+	}
+
 	return startHistoryId, nil
 }
 
@@ -265,6 +277,7 @@ func GetMessagesAddedinHistory(history_id uint64, client *gmail.Service, user st
 	// Retrieve the history of the user.
 	history, err := client.Users.History.List(user).StartHistoryId(history_id).Do()
 	if err != nil {
+		fmt.Println("unable to retrieve history: %v", err)
 		return nil, 0, fmt.Errorf("unable to retrieve history: %v", err)
 	}
 
@@ -319,10 +332,10 @@ func parseEmails(messages []string, client *gmail.Service, user string) ([]Email
 
 	for _, message := range messages {
 		// Get the message content
-		// fmt.Println("Getting message : ", message)
+		fmt.Println("Getting message : ", message)
 		msg, err := client.Users.Messages.Get(user, message).Do()
 		if err != nil {
-			// fmt.Printf("Unable to retrieve %v: %v", message, err)
+			fmt.Printf("Unable to retrieve %v: %v", message, err)
 			continue
 		}
 
@@ -330,14 +343,15 @@ func parseEmails(messages []string, client *gmail.Service, user string) ([]Email
 		html, err, headers := getMessageContent(msg)
 		content, err := getAllTextFromHTML(html)
 
-		newEmails = append(newEmails, Email{headers["From"], headers["To"], headers["Subject"], content})
+		newEmails = append(newEmails, Email{headers["From"], headers["To"], headers["Subject"], content, []string{}})
 	}
 
 	return newEmails, nil
 }
 
-func getEmails() []Email {
+func getEmails(emailChnl chan<- Email, wg *sync.WaitGroup) []Email {
 	ctx := context.Background()
+	defer wg.Done()
 	b, err := os.ReadFile("credentials.json")
 	if err != nil {
 		log.Fatalf("Unable to read client secret file: %v", err)
@@ -362,7 +376,7 @@ func getEmails() []Email {
 		log.Fatalf("Unable to retrieve startHistoryId: %v", err)
 	}
 
-	// fmt.Println("Fetching history for ", start_history_id)
+	fmt.Println("Fetching history for ", start_history_id)
 
 	new_messages, latest_history_id, err := GetMessagesAddedinHistory(start_history_id, srv, user)
 
@@ -375,11 +389,9 @@ func getEmails() []Email {
 
 	fmt.Printf("You have %d new Messages", len(emails))
 
-	// for _, email := range emails {
-	// 	fmt.Printf("\n\nFrom: %s\nTo: %s\nSubject: %s\n\n", email.from, email.to, email.subject)
-	// 	for _, content := range email.body {
-	// 		fmt.Printf("%s\n", content)
-	// 	}
-	// }
+	for _, email := range emails {
+		emailChnl <- email
+	}
+	close(emailChnl)
 	return emails
 }

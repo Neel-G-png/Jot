@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
+	"sync"
 
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/huggingface"
@@ -18,12 +21,15 @@ type Configuration struct {
 }
 
 func generatePrompt(email string) string {
-	prompt := prompts.NewPromptTemplate(
-		`Extract Action items from the following Paragraph into a list: 
+	prompt := prompts.NewPromptTemplate(`
+		[INST] Extract action items from the following Paragraph. If there are no action items, summarize the Paragraph. The final result should be presented as a JSON array of strings of action items assigned to a variable named 'ActionItems'. If no action items are present, then the array should contain a single summary string assigned to the same variable.
+
+		The output must be in the following format: "{'ActionItems':[...]}"
 		***********************************************************
-		Paragraph : {{.Email}}?
+		Paragraph:
+		{{.Email}}?
 		***********************************************************
-		Action Items:`,
+		[/INST]`,
 		[]string{"Email"},
 	)
 	result, err := prompt.Format(map[string]any{
@@ -36,20 +42,30 @@ func generatePrompt(email string) string {
 	return result
 }
 
-func cleanResult(result string) []string {
-	actionItemsString := strings.SplitAfter(result, "Action Items:")
-	actionItems := strings.SplitAfter(actionItemsString[1], "\n")
-	finalResult := actionItems[1 : len(actionItems)-1]
-	for i := 0; i < len(finalResult); i++ {
-		finalResult[i] = strings.TrimSpace(finalResult[i])[2:]
+func ParseJson(jsonString string) ([]string, error) {
+	type Response struct {
+		ActionItems []string `json:"ActionItems"`
 	}
-	return finalResult
+
+	var response Response
+	err := json.Unmarshal([]byte(jsonString), &response)
+	if err != nil {
+		// fmt.Println("Error parsing JSON: ", err)
+		return []string{}, err
+	}
+	return response.ActionItems, nil
+}
+
+func cleanResult(result string) []string {
+	lowerHalf := strings.SplitAfter(result, "[/INST]")
+	ActionItems, _ := ParseJson(lowerHalf[1])
+	return ActionItems
 }
 
 func getNewClient() *huggingface.LLM {
 	clientOptions := []huggingface.Option{
-		huggingface.WithToken("XXXXXXXXXXXXX"),
-		huggingface.WithModel("mistralai/Mistral-7B-v0.1"),
+		huggingface.WithToken(os.Getenv("HUGGINGFACEHUB_API_TOKEN")),
+		huggingface.WithModel("mistralai/Mistral-7B-Instruct-v0.1"),
 	}
 	llm, err := huggingface.New(clientOptions...)
 	if err != nil {
@@ -63,7 +79,7 @@ func extractActionItems(prompt string) []string {
 	llm := getNewClient()
 	ctx := context.Background()
 	generateOptions := []llms.CallOption{
-		llms.WithModel("mistralai/Mistral-7B-v0.1"),
+		llms.WithModel("mistralai/Mistral-7B-Instruct-v0.1"),
 		llms.WithMinLength(50),
 		llms.WithMaxLength(400),
 	}
@@ -73,28 +89,44 @@ func extractActionItems(prompt string) []string {
 		fmt.Println("call error")
 		log.Fatal(err)
 	}
-	// fmt.Println(completion, "\n\n########################")
 	finalResult := cleanResult(completion)
 
-	return finalResult //[]string{completion}
+	return finalResult
 }
 
-func main() {
-	// email := "I trust this message finds you well. As we navigate the demands of our current projects. First and foremost, we have a client presentation scheduled for 2:00 PM, and I need you to finalize the presentation deck by incorporating all relevant data, charts, and key insights. Additionally, we need your expertise in reviewing the budget proposal for Project X, providing detailed feedback, and coordinating with the finance team on any necessary adjustments. Lastly, please compile individual progress reports from team members for our weekly meeting tomorrow, summarizing key achievements, challenges, and upcoming goals. Kindly submit the compiled report to me by 5:00 PM today for review. Your dedication to completing these tasks promptly is instrumental to our success. Feel free to reach out if you have any questions or foresee any challenges."
-	emails := getEmails()
-	// Make each email into a string.
-	var actionItems [][]string
-	for _, email := range emails {
+func process(emailChnl <-chan Email, llmChnl chan<- Email, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for email := range emailChnl {
 		emailString := "From: " + email.from + "\nTo: " + email.to + "\nSubject: " + email.subject
-
 		for _, content := range email.body {
 			emailString += "\n" + content
 		}
 		result := generatePrompt(emailString)
 		finalResult := extractActionItems(result)
-		actionItems = append(actionItems, finalResult)
+		email.summary = finalResult
+		llmChnl <- email
 	}
-	fmt.Println(actionItems)
-	// updateNotion(actionItems)
-	// fmt.Println("This is the final result : ", finalResult)
+	close(llmChnl)
+}
+
+func main() {
+	var wg sync.WaitGroup
+
+	emailChnl := make(chan Email, 10)
+	llmChnl := make(chan Email, 10)
+
+	wg.Add(3)
+	go getEmails(emailChnl, &wg)
+	go process(emailChnl, llmChnl, &wg)
+	go updateNotion(llmChnl, &wg)
+
+	// emails := getEmails()
+
+	for email := range llmChnl {
+		fmt.Printf("\n\nFrom: %s\nTo: %s\nSubject: %s\n\n", email.from, email.to, email.subject)
+		fmt.Println("Summary: ", email.summary)
+	}
+	wg.Wait()
+	fmt.Println("All goroutines have finished execution.")
+	// updateNotion(emails)
 }
