@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -26,7 +27,8 @@ type Email struct {
 	to      string
 	subject string
 	body    []string
-	summary []string
+	date    string
+	summary string
 }
 
 // Retrieve a token, saves the token, then returns the generated client.
@@ -154,13 +156,13 @@ func getLabels(client *gmail.Service, user string) {
 }
 
 // Get the content of the given message
-func getMessageContent(msg *gmail.Message) (string, error, map[string]string) {
+func getMessageContent(msg *gmail.Message) (string, map[string]string, error) {
 	var html string
 	for _, part := range msg.Payload.Parts {
 		if part.MimeType == "text/html" {
 			data, err := base64.URLEncoding.DecodeString(part.Body.Data)
 			if err != nil {
-				return html, err, nil
+				return html, nil, err
 			}
 			html += string(data)
 		}
@@ -171,11 +173,12 @@ func getMessageContent(msg *gmail.Message) (string, error, map[string]string) {
 		switch header.Name {
 		case "From",
 			"To",
-			"Subject":
+			"Subject",
+			"Date":
 			headers[header.Name] = header.Value
 		}
 	}
-	return html, nil, headers
+	return html, headers, nil
 }
 
 // FetchLatestMessage retrieves the latest message in the inbox of the given user.
@@ -266,6 +269,9 @@ func readStartHistoryIdFromConfig(fileName string, client *gmail.Service, user s
 
 	if startHistoryId == 0 {
 		startHistoryId, err = configNotPresent(fileName, client, user)
+		if err != nil {
+			return startHistoryId, err
+		}
 	}
 
 	return startHistoryId, nil
@@ -277,7 +283,7 @@ func GetMessagesAddedinHistory(history_id uint64, client *gmail.Service, user st
 	// Retrieve the history of the user.
 	history, err := client.Users.History.List(user).StartHistoryId(history_id).Do()
 	if err != nil {
-		fmt.Println("unable to retrieve history: %v", err)
+		fmt.Println("unable to retrieve history: ", err)
 		return nil, 0, fmt.Errorf("unable to retrieve history: %v", err)
 	}
 
@@ -327,6 +333,30 @@ func getAllTextFromHTML(htmlContent string) ([]string, error) {
 	return textPortions, nil
 }
 
+func removeParenthesizedText(input string) string {
+	re := regexp.MustCompile(`\s*\(.*?\)\s*`)
+	return re.ReplaceAllString(input, "")
+}
+
+func formatDate(inputDate string) string {
+	// Define the layout corresponding to the input date format
+	cleanedInputDate := removeParenthesizedText(inputDate)
+	inputLayout := time.RFC1123Z
+	// Parse the input date string to a time.Time object
+	parsedTime, err := time.Parse(inputLayout, cleanedInputDate)
+	if err != nil {
+		fmt.Println("Error parsing date:", err)
+	}
+
+	// Define the layout for the output date format
+	outputLayout := time.RFC3339
+
+	// Format the parsed time to UTC and then to the desired output format
+	outputDate := parsedTime.UTC().Format(outputLayout)
+
+	return outputDate
+}
+
 func parseEmails(messages []string, client *gmail.Service, user string) ([]Email, error) {
 	var newEmails []Email
 
@@ -340,10 +370,17 @@ func parseEmails(messages []string, client *gmail.Service, user string) ([]Email
 		}
 
 		// Get all the text from the HTML content
-		html, err, headers := getMessageContent(msg)
-		content, err := getAllTextFromHTML(html)
+		html, headers, err := getMessageContent(msg)
+		if err != nil {
+			log.Fatalf("Unable to get Content: %v", err)
+		}
 
-		newEmails = append(newEmails, Email{headers["From"], headers["To"], headers["Subject"], content, []string{}})
+		content, err := getAllTextFromHTML(html)
+		if err != nil {
+			log.Fatalf("Unable to get text: %v", err)
+		}
+		outputDate := formatDate(headers["Date"])
+		newEmails = append(newEmails, Email{headers["From"], headers["To"], headers["Subject"], content, outputDate, ""})
 	}
 
 	return newEmails, nil
@@ -379,6 +416,9 @@ func getEmails(emailChnl chan<- Email, wg *sync.WaitGroup) []Email {
 	fmt.Println("Fetching history for ", start_history_id)
 
 	new_messages, latest_history_id, err := GetMessagesAddedinHistory(start_history_id, srv, user)
+	if err != nil {
+		log.Fatalf("Unable to get messages: %v", err)
+	}
 
 	err = saveStartHistoryIdToConfig(latest_history_id, "config.json")
 	if err != nil {
@@ -386,6 +426,9 @@ func getEmails(emailChnl chan<- Email, wg *sync.WaitGroup) []Email {
 	}
 
 	emails, err := parseEmails(new_messages, srv, user)
+	if err != nil {
+		log.Fatalf("Unable to parse emails: %v", err)
+	}
 
 	fmt.Printf("You have %d new Messages", len(emails))
 

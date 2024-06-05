@@ -94,6 +94,17 @@ func extractActionItems(prompt string) []string {
 	return finalResult
 }
 
+func formatSliceToString(slice []string) string {
+	var sb strings.Builder
+
+	for i, str := range slice {
+		// Append the formatted string to the StringBuilder
+		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, str))
+	}
+
+	return sb.String()
+}
+
 func process(emailChnl <-chan Email, llmChnl chan<- Email, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for email := range emailChnl {
@@ -103,7 +114,10 @@ func process(emailChnl <-chan Email, llmChnl chan<- Email, wg *sync.WaitGroup) {
 		}
 		result := generatePrompt(emailString)
 		finalResult := extractActionItems(result)
-		email.summary = finalResult
+
+		formattedString := formatSliceToString(finalResult)
+
+		email.summary = formattedString
 		llmChnl <- email
 	}
 	close(llmChnl)
@@ -118,14 +132,13 @@ func main() {
 	wg.Add(3)
 	go getEmails(emailChnl, &wg)
 	go process(emailChnl, llmChnl, &wg)
+
+	// for email := range llmChnl {
+	// 	fmt.Printf("\n\nDate: %s\nFrom: %s\nTo: %s\nSubject: %s\n\n", email.date, email.from, email.to, email.subject)
+	// 	fmt.Println("Summary: ", email.summary)
+	// }
+
 	go updateNotion(llmChnl, &wg)
-
-	// emails := getEmails()
-
-	for email := range llmChnl {
-		fmt.Printf("\n\nFrom: %s\nTo: %s\nSubject: %s\n\n", email.from, email.to, email.subject)
-		fmt.Println("Summary: ", email.summary)
-	}
 	wg.Wait()
 	fmt.Println("All goroutines have finished execution.")
 	// updateNotion(emails)
