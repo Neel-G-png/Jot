@@ -339,13 +339,31 @@ func removeParenthesizedText(input string) string {
 }
 
 func formatDate(inputDate string) string {
-	// Define the layout corresponding to the input date format
+	// Define a list of possible date formats
+	dateFormats := []string{
+		time.RFC1123Z,                    // "Mon, 02 Jan 2006 15:04:05 -0700"
+		time.RFC1123,                     // "Mon, 02 Jan 2006 15:04:05 MST"
+		time.RFC3339,                     // "2006-01-02T15:04:05Z07:00"
+		"Mon, 2 Jan 2006 15:04:05 -0700", // Custom layout to handle one-digit day
+	}
+
+	// Remove parenthesized text from the input date
 	cleanedInputDate := removeParenthesizedText(inputDate)
-	inputLayout := time.RFC1123Z
-	// Parse the input date string to a time.Time object
-	parsedTime, err := time.Parse(inputLayout, cleanedInputDate)
+
+	var parsedTime time.Time
+	var err error
+
+	// Try parsing the date with each format
+	for _, layout := range dateFormats {
+		parsedTime, err = time.Parse(layout, cleanedInputDate)
+		if err == nil {
+			break
+		}
+	}
+
 	if err != nil {
 		fmt.Println("Error parsing date:", err)
+		return ""
 	}
 
 	// Define the layout for the output date format

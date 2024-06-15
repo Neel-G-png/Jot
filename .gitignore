@@ -3,3 +3,5 @@ config.json
 credentials.json
 token.json
 keys
+notionCred.json
+databases.json
